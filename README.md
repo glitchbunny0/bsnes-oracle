@@ -5,11 +5,11 @@ A fork of [bsnes](https://github.com/bsnes-emu/bsnes) v115 with a new
 headless **debugger-oracle** target — a console driver built for
 reverse-engineering and engine-reconstruction work.
 
-It exists to answer one question reliably: *what does the real hardware
-pipeline actually do?* The oracle runs a stock ROM under the bsnes
-accuracy core and dumps ground truth — instruction traces, memory
-accesses, VRAM/CGRAM/WRAM/APU state — so a re-implementation can be
-diffed against it, byte for byte.
+It exists to answer one question reliably: *what does the bsnes accuracy
+core do?* The oracle runs a ROM headless and dumps reference state —
+WRAM/VRAM/CGRAM/APU memory, PPU state, a per-byte VRAM write journal —
+so a re-implementation can be diffed against the emulator's behavior,
+byte for byte.
 
 Built for the [Evermore Project](https://evermore.ancient.monster/), a
 reconstruction of Secret of Evermore's engine in Godot.
@@ -21,10 +21,10 @@ What the oracle target adds
   (`--exec-bp`, `--spc-bp`, `--watch-r/w`, `--reset-bp`), with
   single-stepping (`--steps`) and scripted pad input per frame
   (`--press` / `--release F:BTN`).
-- **State dumps at exit or at a chosen frame** (`--snapshot-at`):
-  WRAM (128 KiB), VRAM (128 KiB), CGRAM, PPU background state, extended
-  PPU registers, APU RAM (64 KiB) and the DSP register file. WRAM can
-  additionally be dumped at the first break hit (`--wram-at-hit`).
+- **State dumps at exit, or at a chosen frame** (`--snapshot-at`):
+  VRAM (128 KiB), CGRAM, PPU background state, extended PPU registers,
+  APU RAM (64 KiB) and the DSP register file. WRAM dumps separately at
+  exit, or at the first break hit (`--wram-at-hit`).
 - **A VRAM write journal** — every byte written to VRAM, with the
   address, byte lane, and whether the CPU or DMA wrote it. Indispensable
   for figuring out how a frame is actually composed.
@@ -37,39 +37,29 @@ What the oracle target adds
 
 Upstream behavior is unchanged: the fork adds read-only, inert-when-unused
 hooks (~200 lines) inside sfc/ and a new build target; everything else is
-stock v115.
+stock v115. Note: PPU/VRAM/CGRAM dumps read the accuracy renderer — pass
+`--accurate` (the fast renderer keeps its own copies, so dumps in fast
+mode are not meaningful).
 
-Why not an existing debugger emulator?
---------------------------------------
+How this differs from existing debugger emulators
+--------------------------------------------------
 
-Fair question — the SNES scene has good ones. They just optimize for a
-human at the keyboard, not a program:
-
-- **[Mesen2](https://github.com/SourMesen/Mesen2)** — probably the best
-  SNES debugger UI there is. But it's GUI-first; its automation is a
-  test-runner mode for pass/fail test ROMs, not a scriptable debug
-  session with dumps and scripted input.
-- **[BizHawk](https://github.com/TASEmulators/BizHawk)** — genuinely
-  scriptable via Lua, but Windows-first, and its SNES core is itself a
-  port of bsnes. Same accuracy with more layers.
-- **[bsnes-plus](https://github.com/devinacker/bsnes-plus)** — a
-  debugger fork of bsnes, closest in spirit, but a GUI debugger forked
-  from the older bsnes lineage.
-- **no$sns** — a great debugger, closed-source Windows software.
-
-What was missing is an emulator as a *programmable instrument*: a
-headless process you drive from scripts or agents, that runs
-deterministically, takes frame-indexed input, dumps raw hardware state
-to files, and re-runs byte-identically. That's the niche this target
-fills — on top of the accuracy core the scene already treats as its
-reference.
+[Mesen2](https://github.com/SourMesen/Mesen2) has an excellent debugger
+UI and a Lua-scriptable test runner. [BizHawk](https://github.com/TASEmulators/BizHawk)
+scripts well too (its SNES core is a bsnes port). [bsnes-plus](https://github.com/devinacker/bsnes-plus)
+is a GUI debugger fork of an older bsnes. This target is a different
+shape, not a better one: a small headless bsnes v115 frontend whose
+entire interface is NDJSON over stdio and raw binary dumps to files —
+trivially spawnable from scripts, CI, or AI agents, with deterministic
+re-runs. If you want an interactive debugger, use Mesen2. If you want an
+emulator as a subprocess instrument on the v115 core, this exists.
 
 Use cases
 ---------
 
 - **Engine reconstruction / decompilation** — a re-implementation (in
-  any language) can be diffed against emulator ground truth, byte for
-  byte. This is what it was built for.
+  any language) can be diffed against the emulator's reference state,
+  byte for byte. This is what it was built for.
 - **Automated regression testing of ROM hacks** — run a hack to a
   breakpoint or frame budget, hash the state dumps, compare against a
   known-good baseline. Deterministic re-runs make the comparison sound.
@@ -81,6 +71,19 @@ Use cases
 - **Tool-assisted research** — frame-indexed input schedules and
   save/load state support scripted, reproducible experiments without a
   TAS editor.
+
+Status
+------
+
+Working and in daily use as a RE reference, but young software — known
+issues are tracked in the issue tracker, including: the VRAM journal
+requires an explicit `--journal-from` (the documented power-on default
+does not arm it), `--reset-bp` assumes HiROM layout, interactive mode
+ignores command-line breakpoints, batch dump I/O failures currently
+exit 0, and interactive `step(n)` halts after one instruction. Fresh
+batch runs with fixed input are deterministic; interactive save/load
+restores emulator state but not the host-side frame/input bookkeeping.
+Read the issues before automating around it.
 
 Building
 --------
