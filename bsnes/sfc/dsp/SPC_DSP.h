@@ -57,6 +57,12 @@ public:
 	enum { register_count = 128 };
 	void load( uint8_t const regs [register_count] );
 
+	//oracle: read-only DSP register-file access for --dspregs.
+	//The cgramColor() pattern: small public const accessor; the register file
+	//(incl. $5D BRR source directory page, $6C flags, $4C KON) is internal
+	//DSP state and appears NOWHERE in APU RAM.
+	auto reg( uint8_t address ) const -> uint8_t { return m.regs [address & 0x7F]; }
+
 	// Saves/loads exact emulator state
 	enum { state_size = 640 }; // maximum space needed when saving
 	typedef dsp_copy_func_t copy_func_t;

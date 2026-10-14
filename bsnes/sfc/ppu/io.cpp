@@ -41,6 +41,8 @@ auto PPU::writeVRAM(bool byte, uint8 data) -> void {
   auto address = addressVRAM();
   if(byte == 0) vram[address] = vram[address] & 0xff00 | data << 0;
   if(byte == 1) vram[address] = vram[address] & 0x00ff | data << 8;
+  //oracle: VRAM write journal for tilemap transfer-path work
+  if(journalArmed) journal.append({(uint16)address, (uint1)byte, journalCpu});
 }
 
 auto PPU::readOAM(uint10 addr) -> uint8 {

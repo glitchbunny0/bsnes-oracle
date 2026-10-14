@@ -37,6 +37,15 @@ struct Bus {
   ) -> uint;
   auto unmap(const string& address) -> void;
 
+  //oracle: read-only logical->physical decode, the cgramColor()
+  //pattern. id = bus handler identity, offset = position within that handler's
+  //region; mirrors of a logical address share both. id==0 = unmapped (open bus).
+  inline auto decode(uint address, uint8& id, uint32& offset) const -> void {
+    uint line = address & 0xFFFFFF;
+    id = lookup ? lookup[line] : (uint8)0;
+    offset = lookup ? target[line] : (uint32)0;
+  }
+
 private:
   uint8* lookup = nullptr;
   uint32* target = nullptr;

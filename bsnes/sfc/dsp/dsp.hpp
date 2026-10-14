@@ -4,6 +4,18 @@ struct DSP {
   shared_pointer<Emulator::Stream> stream;
   uint8 apuram[64 * 1024] = {};
 
+  //oracle: read-only APU RAM access for the --spcram dump.
+  //The cgramColor() pattern: a small public const accessor next to the member;
+  //the headless driver never reaches into private structs.
+  //The full 64K apuram is the APU's whole world: SMP program + data + $FFC0 IPL
+  //mirror + DSP registers + port files. (The echoram shadow is a DSP hack copy
+  //and is NOT dumped.)
+  auto apuramByte(uint16 address) const -> uint8 { return apuram[address]; }
+
+  //oracle: read-only DSP register file ($5D BRR source directory
+  //page lives HERE — internal DSP state, not in apuram).
+  auto dspReg(uint8 address) const -> uint8 { return spc_dsp.reg(address); }
+
   auto main() -> void;
   auto read(uint8 address) -> uint8;
   auto write(uint8 address, uint8 data) -> void;

@@ -19,6 +19,13 @@ auto SMP::synchronizeDSP() -> void {
 auto SMP::Enter() -> void {
   while(true) {
     scheduler.synchronize();
+    //oracle: SPC700 instruction-boundary hook. Fires before the
+    //upcoming SMP instruction executes (r.pc.w points at its opcode). A true
+    //return yields to the host driver via Event::Debug; the coroutine resumes
+    //exactly here on the next System::run().
+    if(oracle.spcInstruction && oracle.spcInstruction(smp.r.pc.w)) {
+      scheduler.leave(Scheduler::Event::Debug);
+    }
     smp.main();
   }
 }

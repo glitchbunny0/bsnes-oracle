@@ -4,6 +4,7 @@ namespace SuperFamicom {
 
 System system;
 Scheduler scheduler;
+OracleHooks oracle;
 Random random;
 Cheat cheat;
 #include "serialization.cpp"

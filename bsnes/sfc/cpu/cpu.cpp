@@ -27,6 +27,13 @@ auto CPU::synchronizeCoprocessors() -> void {
 auto CPU::Enter() -> void {
   while(true) {
     scheduler.synchronize();
+    //soe-re oracle: instruction-boundary hook. Fires before the upcoming
+    //instruction executes (r.pc points at its opcode). A true return yields
+    //to the host driver via Event::Debug; the coroutine merely suspends
+    //inside this loop and resumes exactly here on the next System::run().
+    if(oracle.instruction && oracle.instruction(cpu.r.pc.d)) {
+      scheduler.leave(Scheduler::Event::Debug);
+    }
     cpu.main();
   }
 }
