@@ -31,7 +31,7 @@ namespace SuperFamicom {
 
   struct Scheduler {
     enum class Mode : uint { Run, Synchronize } mode;
-    enum class Event : uint { Frame, Synchronized, Desynchronized } event;
+    enum class Event : uint { Frame, Synchronized, Desynchronized, Debug } event;
 
     cothread_t host = nullptr;
     cothread_t active = nullptr;
@@ -73,6 +73,28 @@ namespace SuperFamicom {
     }
   };
   extern Scheduler scheduler;
+
+  //--- soe-re oracle hooks (headless 65816 debugger control plane) -------------
+  // Installed by target-oracle. All pointers are null when unused (overhead is
+  // one predicted indirect call per CPU bus access). A hook returns true to
+  // yield to the host: scheduler.leave(Event::Debug) fires from inside the CPU
+  // coroutine and System::run() returns to the driver with scheduler.event set
+  // to Debug; the driver inspects cpu state and calls run() again to resume
+  // exactly where the CPU stopped (mid-instruction is safe: the coroutine is
+  // merely suspended inside the hook).
+  struct OracleHooks {
+    // called at every instruction boundary, BEFORE the instruction executes;
+    // r.pc points at the upcoming opcode.
+    bool (*instruction)(uint32 pc) = nullptr;
+    // called after each CPU bus read completes (value fetched, about to return).
+    bool (*read)(uint32 address) = nullptr;
+    // called after each CPU bus write completes.
+    bool (*write)(uint32 address) = nullptr;
+    //called at every SPC700 (SMP) instruction boundary, BEFORE the
+    // instruction executes; smp.r.pc.w points at the upcoming opcode.
+    bool (*spcInstruction)(uint16 pc) = nullptr;
+  };
+  extern OracleHooks oracle;
 
   struct Thread {
     enum : uint { Size = 4_KiB * sizeof(void*) };

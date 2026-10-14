@@ -1,75 +1,99 @@
-bsnes
-=====
+bsnes-oracle
+============
 
-![bsnes logo](bsnes/target-bsnes/resource/logo.png)
+A fork of [bsnes](https://github.com/bsnes-emu/bsnes) v115 with a new
+headless **debugger-oracle** target — a console driver built for
+reverse-engineering and engine-reconstruction work.
 
-bsnes is a multi-platform Super Nintendo (Super Famicom) emulator, originally
-developed by Near, which focuses on performance,
-features, and ease of use.
+It exists to answer one question reliably: *what does the real hardware
+pipeline actually do?* The oracle runs a stock ROM under the bsnes
+accuracy core and dumps ground truth — instruction traces, memory
+accesses, VRAM/CGRAM/WRAM/APU state — so a re-implementation can be
+diffed against it, byte for byte.
 
-Unique Features
----------------
+Built for the [Evermore Project](https://evermore.ancient.monster/), a
+reconstruction of Secret of Evermore's engine in Godot.
 
-  - True Super Game Boy emulation (using the SameBoy core by Lior Halphon)
-  - HD mode 7 graphics with optional supersampling (by DerKoun)
-  - Low-level emulation of all SNES coprocessors (DSP-n, ST-01n, Cx4)
-  - Multi-threaded PPU graphics renderer
-  - Speed mode settings which retain smooth audio output (50%, 75%, 100%, 150%, 200%)
-  - Built-in games database with thousands of game entries
-  - Built-in cheat code database for hundreds of popular games (by mightymo)
-  - Built-in save state manager with screenshot previews and naming capabilities
-  - Customizable per-byte game mappings to support any cartridges, including prototype games
-  - 7-zip decompression support
-  - Extensive Satellaview emulation, including BS Memory flash write and wear-leveling emulation
-  - Optional higan game folder support (standard game ROM files are also fully supported!)
-  - Advanced mapping system allowing multiple bindings to every emulated input
+What the oracle target adds
+---------------------------
 
-Standard Features
------------------
+- **Breakpoints and watchpoints** on the 65816 bus and the SPC700 APU
+  (`--exec-bp`, `--spc-bp`, `--watch-r/w`, `--reset-bp`), with
+  single-stepping (`--steps`) and scripted pad input per frame
+  (`--press` / `--release F:BTN`).
+- **State dumps at exit or at a chosen frame** (`--snapshot-at`):
+  WRAM (128 KiB), VRAM (128 KiB), CGRAM, PPU background state, extended
+  PPU registers, APU RAM (64 KiB) and the DSP register file. WRAM can
+  additionally be dumped at the first break hit (`--wram-at-hit`).
+- **A VRAM write journal** — every byte written to VRAM, with the
+  address, byte lane, and whether the CPU or DMA wrote it. Indispensable
+  for figuring out how a frame is actually composed.
+- **Deterministic re-runs** via save/load state and fixed input
+  schedules, so two runs of the same experiment produce identical
+  output.
+- **An interactive JSON channel** (`--interactive`) over stdin/stdout:
+  `run_to`, `step`, `bp_add/del`, `regs`, `mem_read` and friends — so
+  scripts and agents can drive the emulator like a debugger.
 
-  - MSU1 support
-  - BPS and IPS soft-patching support
-  - Save states with undo and redo support (for reverting accidental saves and loads)
-  - OpenGL multi-pass pixel shaders
-  - Several built-in software filters, including HQ2x (by MaxSt) and snes_ntsc (by blargg)
-  - Adaptive sync and dynamic rate control for perfect audio/video synchronization
-  - Just-in-time input polling for minimal input latency
-  - Run-ahead support for removing internal game engine input latency
-  - Support for Direct3D exclusive mode video
-  - Support for WASAPI exclusive mode audio
-  - Periodic auto-saving of game saves
-  - Auto-saving of states when unloading games, and auto-resuming of states when reloading games
-  - Sprite limit disable support
-  - Cubic audio interpolation support
-  - Optional high-level emulation of most SNES coprocessors
-  - Optional emulation of flaws in older emulators for compatibility with older unofficial software
-  - CPU, SA1, and SuperFX overclocking support
-  - Frame advance support
-  - Screenshot support
-  - Cheat code search support
-  - Movie recording and playback support
-  - Rewind support
-  - HiDPI support
-  - Multi-monitor support
-  - Turbo support for controller inputs
+Upstream behavior is unchanged: the fork adds read-only, inert-when-unused
+hooks (~200 lines) inside sfc/ and a new build target; everything else is
+stock v115.
 
-Links
------
+Why not an existing debugger emulator?
+--------------------------------------
 
-  - [Official git repository](https://github.com/bsnes-emu/bsnes)
-  - [Official Discord](https://discord.gg/B27hf27ZVf)
+Fair question — the SNES scene has good ones. They just optimize for a
+human at the keyboard, not a program:
 
-Nightly Builds
---------------
+- **[Mesen2](https://github.com/SourMesen/Mesen2)** — probably the best
+  SNES debugger UI there is. But it's GUI-first; its automation is a
+  test-runner mode for pass/fail test ROMs, not a scriptable debug
+  session with dumps and scripted input.
+- **[BizHawk](https://github.com/TASEmulators/BizHawk)** — genuinely
+  scriptable via Lua, but Windows-first, and its SNES core is itself a
+  port of bsnes. Same accuracy with more layers.
+- **[bsnes-plus](https://github.com/devinacker/bsnes-plus)** — a
+  debugger fork of bsnes, closest in spirit, but a GUI debugger forked
+  from the older bsnes lineage.
+- **no$sns** — a great debugger, closed-source Windows software.
 
-  - [Windows](https://github.com/bsnes-emu/bsnes/releases/download/nightly/bsnes-windows.zip)
-  - [macOS](https://github.com/bsnes-emu/bsnes/releases/download/nightly/bsnes-macos.zip)
-  - [Linux](https://github.com/bsnes-emu/bsnes/releases/download/nightly/bsnes-ubuntu.zip)
-  - [FreeBSD](https://api.cirrus-ci.com/v1/artifact/github/bsnes-emu/bsnes/freebsd-x86_64-binaries/bsnes-nightly/bsnes-nightly.zip)
+What was missing is an emulator as a *programmable instrument*: a
+headless process you drive from scripts or agents, that runs
+deterministically, takes frame-indexed input, dumps raw hardware state
+to files, and re-runs byte-identically. That's the niche this target
+fills — on top of the accuracy core the scene already treats as its
+reference.
 
-Preview
+Use cases
+---------
+
+- **Engine reconstruction / decompilation** — a re-implementation (in
+  any language) can be diffed against emulator ground truth, byte for
+  byte. This is what it was built for.
+- **Automated regression testing of ROM hacks** — run a hack to a
+  breakpoint or frame budget, hash the state dumps, compare against a
+  known-good baseline. Deterministic re-runs make the comparison sound.
+- **Agentic / scripted reverse engineering** — the `--interactive` JSON
+  channel (run_to, step, bp_add, regs, mem_read, …) turns the emulator
+  into a tool an AI agent can drive like a debugger: form a hypothesis,
+  set a breakpoint, inspect state, repeat. GUI debuggers assume a human
+  in the loop; this one doesn't need one.
+- **Tool-assisted research** — frame-indexed input schedules and
+  save/load state support scripted, reproducible experiments without a
+  TAS editor.
+
+Building
+--------
+
+```sh
+make -C bsnes target=oracle -j$(nproc)   # → bsnes/out/bsnes-oracle
+```
+
+No GUI dependencies; the driver is a plain console binary. Run it with
+no arguments for the full option list.
+
+License
 -------
 
-![bsnes user interface](.assets/user-interface.png)
-![bsnes running Bahamut Lagoon](.assets/bahamut-lagoon.png)
-![bsnes running Tengai Makyou Zero](.assets/tengai-makyou-zero.png)
+GPLv3, as bsnes. See `GPLv3.txt`. bsnes is by byuu and contributors —
+see `CREDITS.md` in the upstream repository.

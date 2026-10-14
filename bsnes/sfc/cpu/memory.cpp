@@ -42,6 +42,8 @@ auto CPU::read(uint address) -> uint8 {
   aluEdge();
   //$00-3f,80-bf:4000-43ff reads are internal to CPU, and do not update the MDR
   if((address & 0x40fc00) != 0x4000) r.mdr = data;
+  //soe-re oracle: read watchpoint hook (post-read; value fetched and in hand)
+  if(oracle.read && oracle.read(address)) scheduler.leave(Scheduler::Event::Debug);
   return data;
 }
 
@@ -78,7 +80,13 @@ auto CPU::write(uint address, uint8 data) -> void {
   }
 
   status.irqLock = 0;
+  //oracle: flag VRAM journal entries written by the CPU proper
+  //(DMA's Channel::writeB calls bus.write directly and never sets the flag)
+  SuperFamicom::ppu.journalCpu = 1;
   bus.write(address, r.mdr = data);
+  SuperFamicom::ppu.journalCpu = 0;
+  //soe-re oracle: write watchpoint hook (post-write)
+  if(oracle.write && oracle.write(address)) scheduler.leave(Scheduler::Event::Debug);
 }
 
 auto CPU::readDisassembler(uint address) -> uint8 {

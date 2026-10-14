@@ -186,6 +186,22 @@ auto PPU::power(bool reset) -> void {
   updateVideoMode();
 }
 
+//oracle: const OAM field decode (mirrors PPU::OAM::read without latch side-effects)
+auto PPU::oamByte(uint10 a) const -> uint8 {
+  auto& s = obj.oam.object;
+  if(!(a & 0x200)) {
+    uint n = a >> 2;
+    a &= 3;
+    if(a == 0) return s[n].x & 0xff;
+    if(a == 1) return s[n].y;
+    if(a == 2) return s[n].character;
+    return (s[n].nameselect << 0 | s[n].palette << 1 | s[n].priority << 4 | s[n].hflip << 6 | s[n].vflip << 7);
+  }
+  uint n = (a & 0x1f) << 2;
+  return (s[n+0].x >> 8 << 0 | s[n+0].size << 1 | s[n+1].x >> 8 << 2 | s[n+1].size << 3
+        | s[n+2].x >> 8 << 4 | s[n+2].size << 5 | s[n+3].x >> 8 << 6 | s[n+3].size << 7);
+}
+
 auto PPU::refresh() -> void {
   if(system.fastPPU()) {
     return ppufast.refresh();
