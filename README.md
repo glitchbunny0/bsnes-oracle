@@ -75,15 +75,13 @@ Use cases
 Status
 ------
 
-Working and in daily use as a RE reference, but young software — known
-issues are tracked in the issue tracker, including: the VRAM journal
-requires an explicit `--journal-from` (the documented power-on default
-does not arm it), `--reset-bp` assumes HiROM layout, interactive mode
-ignores command-line breakpoints, batch dump I/O failures currently
-exit 0, and interactive `step(n)` halts after one instruction. Fresh
-batch runs with fixed input are deterministic; interactive save/load
-restores emulator state but not the host-side frame/input bookkeeping.
-Read the issues before automating around it.
+Working and in daily use as a RE reference. The first five reported
+issues (journal default arming, LoROM reset vector, interactive CLI
+breakpoints, dump-failure exit codes, step(n) completion) are fixed and
+verified; remaining known limits: interactive save/load restores
+emulator state but not the host-side frame/input bookkeeping, and the
+oracle makefile's no-OpenMP defaults apply too late to strip the flags.
+Fresh batch runs with fixed input are deterministic.
 
 Building
 --------
