@@ -44,6 +44,7 @@ static uint64 maxBreakHits = 4;                        //overridable via --max-h
 static std::string ppu2DumpPath;
 static std::string vramDumpPath, ppuDumpPath, vramJournalPath;
 static uint journalFromFrame = 0, journalToFrame = 0;  //0 = from power-on / no end
+static int artifactError = 0;  //set by dump/state I/O failures; forces exit code 5
 static std::vector<uint16> lastFrame;
 static uint lastFrameW = 0, lastFrameH = 0, lastFramePitch = 0;
 static bool wramAtHit = false, wramDumped = false;
@@ -120,7 +121,12 @@ static auto decodePhysical(uint32 address, uint8& id, uint32& offset) -> bool {
 // ---------------------------------------------------------------------------
 static auto oracleInstruction(uint32 pc) -> bool {
   if(interactiveMode) {
-    if(intStepPending > 0) { intStepPending--; lastDebugWasStep = true; return true; }
+    if(intStepPending > 0) {
+      intStepPending--;              //one instruction completed
+      lastDebugWasStep = true;
+      if(intStepPending > 0) return false;  //issue #5: only yield when n exhausted
+      return true;
+    }
     //exec breakpoints keyed on (handler id, physical offset): every mirror
     //of the armed address trips this single check — the standing law: a
     //single-mirror watch reads cold while the engine fetches through another.
@@ -349,7 +355,7 @@ static auto parseButton(const char* s) -> int {
 
 static auto dumpWRAM(const char* why) -> void {
   FILE* f = fopen(wramDumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] WRAM dump FAILED to open %s\n", wramDumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] WRAM dump FAILED to open %s\n", wramDumpPath.c_str()); artifactError = 1; return; }
   fwrite(SuperFamicom::cpu.wram, 1, sizeof(SuperFamicom::cpu.wram), f);
   fclose(f);
   wramDumped = true;
@@ -358,7 +364,7 @@ static auto dumpWRAM(const char* why) -> void {
 
 static auto dumpCGRAM(const char* why) -> void {
   FILE* f = fopen(cgramDumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] CGRAM dump FAILED to open %s\n", cgramDumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] CGRAM dump FAILED to open %s\n", cgramDumpPath.c_str()); artifactError = 1; return; }
   //256 colors, BGR555, little-endian words — the PPU's own palette RAM
   uint8 buf[512];
   for(uint i = 0; i < 256; i++) {
@@ -375,7 +381,7 @@ static auto dumpCGRAM(const char* why) -> void {
 //irrelevant (byte array), one byte per address $0000-$FFFF.
 static auto dumpSPCRAM(const char* why) -> void {
   FILE* f = fopen(spcramDumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] SPCRAM dump FAILED to open %s\n", spcramDumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] SPCRAM dump FAILED to open %s\n", spcramDumpPath.c_str()); artifactError = 1; return; }
   uint8 buf[64 * 1024];
   for(uint32 i = 0; i < 64 * 1024; i++) {
     buf[i] = SuperFamicom::dsp.apuramByte((uint16)i);
@@ -390,7 +396,7 @@ static auto dumpSPCRAM(const char* why) -> void {
 //the SMP reaches it only through $F2/$F3, it never lives in apuram.
 static auto dumpDSPRegs(const char* why) -> void {
   FILE* f = fopen(dspRegsDumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] DSPREGS dump FAILED to open %s\n", dspRegsDumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] DSPREGS dump FAILED to open %s\n", dspRegsDumpPath.c_str()); artifactError = 1; return; }
   uint8 buf[128];
   for(uint i = 0; i < 128; i++) {
     buf[i] = SuperFamicom::dsp.dspReg((uint8)i);
@@ -403,7 +409,7 @@ static auto dumpDSPRegs(const char* why) -> void {
 //VRAM dump — 64K words, uint16 LE, accuracy PPU's own array
 static auto dumpVRAM(const char* why) -> void {
   FILE* f = fopen(vramDumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] VRAM dump FAILED to open %s\n", vramDumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] VRAM dump FAILED to open %s\n", vramDumpPath.c_str()); artifactError = 1; return; }
   uint8 buf[128 * 1024];
   for(uint i = 0; i < 64 * 1024; i++) {
     uint16 w = SuperFamicom::ppu.vramWord(i);
@@ -426,7 +432,7 @@ static auto dumpVRAM(const char* why) -> void {
 //  u8  aboveEnable, u8 belowEnable, u8 reserved
 static auto dumpPPU(const char* why) -> void {
   FILE* f = fopen(ppuDumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] PPU dump FAILED to open %s\n", ppuDumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] PPU dump FAILED to open %s\n", ppuDumpPath.c_str()); artifactError = 1; return; }
   uint8 hdr[2] = {(uint8)SuperFamicom::ppu.bgMode(), (uint8)SuperFamicom::ppu.bgPriorityFlag()};
   fwrite(hdr, 1, 2, f);
   for(uint id = 0; id < 4; id++) {
@@ -453,7 +459,7 @@ static auto dumpPPU(const char* why) -> void {
 static auto dumpPPU2(const char* why) -> void {
   auto& p = SuperFamicom::ppu;
   FILE* f = fopen(ppu2DumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] PPU2 dump FAILED to open %s\n", ppu2DumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] PPU2 dump FAILED to open %s\n", ppu2DumpPath.c_str()); artifactError = 1; return; }
   uint8 inidisp = p.inidispDisable() << 7 | p.inidispBrightness();
   fputc(inidisp, f);
   for(uint i = 0; i < 11; i++) fputc(p.objReg(i), f);
@@ -482,7 +488,7 @@ static auto dumpVramJournal(const char* why) -> void {
 static auto dumpFrame(const char* why) -> void {
   if(lastFrame.empty()) { fprintf(stderr, "[oracle] frame dump skipped: no frame captured\n"); return; }
   FILE* f = fopen(frameDumpPath.c_str(), "wb");
-  if(!f) { fprintf(stderr, "[oracle] frame dump FAILED to open %s\n", frameDumpPath.c_str()); return; }
+  if(!f) { fprintf(stderr, "[oracle] frame dump FAILED to open %s\n", frameDumpPath.c_str()); artifactError = 1; return; }
   //header: magic, w, h, pitch_bytes, then w*h words (row stride pitch/2)
   uint32 hdr[4] = {0x524D4652, lastFrameW, lastFrameH, lastFramePitch};
   fwrite(hdr, 4, 4, f);
@@ -822,16 +828,35 @@ int main(int argc, char** argv) {
   emulator->unload();
   if(!emulator->load()) { fprintf(stderr, "[oracle] load FAILED for %s\n", romPath.c_str()); return 1; }
 
-  //reset-vector convenience breakpoint: file offset 0xFFFC == HiROM bank, LoROM maps $00:FFFC too
+  //VRAM journal: default arms at power-on (issue #1: explicit --journal-from
+  //was required before; a requested journal with no start frame never armed)
+  if(!vramJournalPath.empty() && !journalFromFrame)
+    SuperFamicom::ppu.beginVramJournal();
+
+  //reset-vector convenience breakpoint: read the vector through the MAPPED
+  //CPU bus after load (issue #2: raw file offsets assumed HiROM layout; a
+  //LoROM reset vector lives at file offset 0x7FFC, not 0xFFFC)
   if(haveResetBP) {
     auto& prom = program.superFamicom.program;
     if(prom.size() >= 0xFFFE) {
-      resetBPAddress = prom[0xFFFC] | prom[0xFFFD] << 8;  //emulation-mode reset: bank $00
+      uint8 lo = SuperFamicom::cpu.readDisassembler(0x00FFFC);
+      uint8 hi = SuperFamicom::cpu.readDisassembler(0x00FFFD);
+      resetBPAddress = lo | hi << 8;  //emulation-mode reset: bank $00
       execBreakpoints.push_back(resetBPAddress);
-      fprintf(stderr, "[oracle] reset vector $%02X%02X%02X -> exec bp at $00:%04X\n",
-        0, prom[0xFFFD], prom[0xFFFC], (unsigned)resetBPAddress);
+      fprintf(stderr, "[oracle] reset vector $%02X%02X%02X -> exec bp at $00:%04X (bus-mapped)\n",
+        0, hi, lo, (unsigned)resetBPAddress);
     } else {
       fprintf(stderr, "[oracle] --reset-bp: program.rom too small\n");
+    }
+  }
+
+  //interactive mode: import CLI-supplied exec breakpoints into the interactive
+  //physical table (issue #3: they were parsed and acknowledged but never fired)
+  if(interactiveMode) {
+    for(auto a : execBreakpoints) {
+      uint8 id; uint32 off;
+      if(decodePhysical(a, id, off))
+        intBreakpoints.push_back({'x', id, off, a});
     }
   }
 
@@ -1252,11 +1277,12 @@ int main(int argc, char** argv) {
     if(file::write(stateSavePath.c_str(), array_view<uint8_t>(s.data(), s.size()))) {
       fprintf(stderr, "[oracle] state saved to %s (%u bytes)\n", stateSavePath.c_str(), s.size());
     } else {
-      fprintf(stderr, "[oracle] state save FAILED: %s\n", stateSavePath.c_str());
+      fprintf(stderr, "[oracle] state save FAILED: %s\n", stateSavePath.c_str()); artifactError = 1;
     }
   }
   //flush save RAM to disk next to the ROM (opt-in: --srm)
   emulator->save();
+  if(artifactError) exitCode = 5;  //gate AFTER exit dumps: artifact failure outranks budget/hit codes
   if(program.flushSaveRAM && SuperFamicom::cartridge.ram.size()) {
     string srm = {program.baseName, ".srm"};
     if(file::write(srm, array_view<uint8_t>(SuperFamicom::cartridge.ram.data(), SuperFamicom::cartridge.ram.size()))) {
