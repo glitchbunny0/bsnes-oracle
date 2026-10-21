@@ -93,6 +93,11 @@ namespace SuperFamicom {
     //called at every SPC700 (SMP) instruction boundary, BEFORE the
     // instruction executes; smp.r.pc.w points at the upcoming opcode.
     bool (*spcInstruction)(uint16 pc) = nullptr;
+    //called on every real APU RAM store, BEFORE it lands (SMP::writeRAM);
+    // smp.r.pc.w is the writing instruction's PC (mid-instruction),
+    // address/data the store target and value. true yields to the host
+    // driver via Event::Debug (same convention as spcInstruction).
+    bool (*spcWrite)(uint16 pc, uint16 address, uint8 data) = nullptr;
   };
   extern OracleHooks oracle;
 

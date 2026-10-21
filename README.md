@@ -21,6 +21,12 @@ What the oracle target adds
   (`--exec-bp`, `--spc-bp`, `--watch-r/w`, `--reset-bp`), with
   single-stepping (`--steps`) and scripted pad input per frame
   (`--press` / `--release F:BTN`).
+- **A passive SPC700 write watch** (`--spc-watch-w ADDR|LO-HI`, repeatable)
+  that logs every real APU RAM store into a range — frame, writing SPC PC,
+  address, value — without ever halting the machine, so armed watches can't
+  reorder scheduler events. `--watch-from F` drops hits before frame F;
+  `--watch-max-print N` caps the log (excess hits are still counted and
+  reported in the exit summary).
 - **State dumps at exit, or at a chosen frame** (`--snapshot-at`):
   VRAM (128 KiB), CGRAM, PPU background state, extended PPU registers,
   APU RAM (64 KiB) and the DSP register file. WRAM dumps separately at
