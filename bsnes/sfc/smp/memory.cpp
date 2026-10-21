@@ -6,7 +6,15 @@ auto SMP::readRAM(uint16 address) -> uint8 {
 
 auto SMP::writeRAM(uint16 address, uint8 data) -> void {
   //writes to $ffc0-$ffff always go to apuram, even if the iplrom is enabled
-  if(io.ramWritable && !io.ramDisable) dsp.apuram[address] = data;
+  if(io.ramWritable && !io.ramDisable) {
+    //oracle: SPC-side write-watch hook. Fires on every real APU RAM store,
+    //before it lands; r.pc.w is the writing instruction's PC
+    //(mid-instruction, deterministic). true yields via Event::Debug.
+    if(oracle.spcWrite && oracle.spcWrite(r.pc.w, address, data)) {
+      scheduler.leave(Scheduler::Event::Debug);
+    }
+    dsp.apuram[address] = data;
+  }
 }
 
 auto SMP::idle() -> void {

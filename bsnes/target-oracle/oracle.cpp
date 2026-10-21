@@ -171,6 +171,36 @@ static auto oracleSpcInstruction(uint16 pc) -> bool {
   for(auto bp : spcExecBreakpoints) if(bp == pc) { lastDebugWasSpcStep = true; return true; }
   return false;
 }
+//SPC700-side write watches (--spc-watch-w SPEC, repeatable; SPEC is ADDR or
+//LO-HI inclusive hex). PASSIVE recorder: every real APU RAM store landing in
+//a watched range prints one [spc-watch] line (frame + SPC PC + addr + data)
+//and counts; the machine never halts and bp/--continue/--max-hits flow is
+//untouched. --watch-from F drops hits before frame F (default 0 = power-on);
+//printing is capped by --watch-max-print (hits beyond it are still counted,
+//reported as suppressed). Reporting happens inside the hook (no coroutine
+//yield), so armed watches cannot reorder scheduler events.
+struct SpcWatchRange { uint16 lo, hi; };
+static std::vector<SpcWatchRange> spcWriteWatches;
+static uint64 spcWatchHits = 0, spcWatchPrinted = 0, spcWatchSuppressed = 0;
+static uint64 spcWatchMaxPrint = 200000;
+static uint spcWatchFromFrame = 0;
+static auto oracleSpcWrite(uint16 pc, uint16 address, uint8 data) -> bool {
+  if(spcWatchFromFrame && frameCounter < spcWatchFromFrame) return false;
+  for(auto& w : spcWriteWatches) {
+    if(address >= w.lo && address <= w.hi) {
+      spcWatchHits++;
+      if(spcWatchPrinted < spcWatchMaxPrint) {
+        spcWatchPrinted++;
+        fprintf(stderr, "[spc-watch] w #%llu at frame %u SPC_PC=%04X addr=%04X data=%02X\n",
+          (unsigned long long)spcWatchHits, frameCounter, (unsigned)pc, (unsigned)address, (unsigned)data);
+      } else {
+        spcWatchSuppressed++;
+      }
+      break;
+    }
+  }
+  return false;  //passive: never halts
+}
 static auto reportSMP(const char* tag) -> void {
   auto& r = SuperFamicom::smp.r;
   fprintf(stderr, "%s SPC_PC=%04X  YA=%04X X=%02X S=%02X P=%02X\n",
@@ -711,6 +741,9 @@ int main(int argc, char** argv) {
       "usage: bsnes-oracle ROM.sfc [options]\n"
       "  --exec-bp ADDR       execution breakpoint, SNES bus address (repeatable; 0x hex)\n"
       "  --spc-bp ADDR        SPC700 exec breakpoint, APU RAM $0000-$FFFF (repeatable) \n"
+      "  --spc-watch-w SPEC   SPC write watch, ADDR or LO-HI inclusive (repeatable, passive)\n"
+      "  --watch-from F       drop spc-watch hits before frame F (default 0)\n"
+      "  --watch-max-print N  cap printed spc-watch lines (default 200000, excess counted)\n"
       "  --watch-r ADDR       read watchpoint (repeatable)\n"
       "  --watch-w ADDR       write watchpoint (repeatable)\n"
       "  --reset-bp           convenience: exec bp on the reset vector from the ROM header\n"
@@ -756,6 +789,20 @@ int main(int argc, char** argv) {
     std::string a = argv[i];
     if(a == "--exec-bp") execBreakpoints.push_back((uint32)strtoul(next(), nullptr, 0));
     else if(a == "--spc-bp") spcExecBreakpoints.push_back((uint32)strtoul(next(), nullptr, 0));
+    else if(a == "--spc-watch-w") {
+      std::string v = next();
+      auto dash = v.find('-');
+      if(dash != std::string::npos) {
+        uint16 lo = (uint16)strtoul(v.substr(0, dash).c_str(), nullptr, 0);
+        uint16 hi = (uint16)strtoul(v.substr(dash + 1).c_str(), nullptr, 0);
+        spcWriteWatches.push_back({lo, hi});
+      } else {
+        uint16 one = (uint16)strtoul(v.c_str(), nullptr, 0);
+        spcWriteWatches.push_back({one, one});
+      }
+    }
+    else if(a == "--watch-from") spcWatchFromFrame = (uint)strtoul(next(), nullptr, 0);
+    else if(a == "--watch-max-print") spcWatchMaxPrint = (uint64)strtoul(next(), nullptr, 0);
     else if(a == "--watch-r") watchpoints.push_back({(uint32)strtoul(next(), nullptr, 0), 'r'});
     else if(a == "--watch-w") watchpoints.push_back({(uint32)strtoul(next(), nullptr, 0), 'w'});
     else if(a == "--reset-bp") haveResetBP = true;
@@ -884,6 +931,7 @@ int main(int argc, char** argv) {
   SuperFamicom::oracle.read = oracleRead;
   SuperFamicom::oracle.write = oracleWrite;
   SuperFamicom::oracle.spcInstruction = oracleSpcInstruction;
+  SuperFamicom::oracle.spcWrite = oracleSpcWrite;
 
   //--steps arms immediately (steps from power-on or from a loaded state);
   //after a break hit, remaining steps continue from the break point.
@@ -1254,8 +1302,9 @@ int main(int argc, char** argv) {
   }
 
   // ---------------------------------------------------------------- epilogue
-  fprintf(stderr, "\n[oracle] SUMMARY: frames=%u break-hits=%" PRIu64 " step-hits=%" PRIu64 " exit=%d\n",
-    frameCounter, breakHits, stepHits, exitCode);
+  fprintf(stderr, "\n[oracle] SUMMARY: frames=%u break-hits=%" PRIu64 " step-hits=%" PRIu64 " exit=%d watch-hits=%llu watch-suppressed=%llu\n",
+    frameCounter, breakHits, stepHits, exitCode,
+    (unsigned long long)spcWatchHits, (unsigned long long)spcWatchSuppressed);
 
   if(!wramDumpPath.empty() && !wramDumped) dumpWRAM("exit");
   if(!cgramDumpPath.empty()) dumpCGRAM("exit");
