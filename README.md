@@ -89,6 +89,23 @@ emulator state but not the host-side frame/input bookkeeping, and the
 oracle makefile's no-OpenMP defaults apply too late to strip the flags.
 Fresh batch runs with fixed input are deterministic.
 
+Branches
+--------
+
+- **`v115`** (this branch) — the oracle on the original bsnes v115 base.
+- **`main`** — the oracle rebased onto current upstream bsnes `master`
+  (`78474e5d3`, 2026-10-07).
+
+The two are **not result-compatible**. Upstream reworked SNES auto-joypad
+polling after v115 (timing, plus an `HVBJOY` report bit) and bumped the
+save-state serializer version. On the Secret of Evermore boot with an
+`--exec-bp 0x8CA960` run, `v115` hits at frame 3115 (WRAM md5
+`9d5fba13bf8765b6f8b14c299b30d902`) and `main` at frame 3108 (md5
+`e285bff86ffa646b621624402bcff928`). Reverting the auto-joypad commits on
+`main` reproduces the `v115` result exactly. Both are deterministic across
+re-runs; save states do not load across the two. Pick one line per project
+and keep its recorded baselines with it.
+
 Building
 --------
 
