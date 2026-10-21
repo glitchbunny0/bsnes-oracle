@@ -1,7 +1,8 @@
 bsnes-oracle
 ============
 
-A fork of [bsnes](https://github.com/bsnes-emu/bsnes) v115 with a new
+A fork of [bsnes](https://github.com/bsnes-emu/bsnes) (rebased on upstream
+`master`; see Branches below) with a new
 headless **debugger-oracle** target — a console driver built for
 reverse-engineering and engine-reconstruction work.
 
@@ -43,7 +44,7 @@ What the oracle target adds
 
 Upstream behavior is unchanged: the fork adds read-only, inert-when-unused
 hooks (~200 lines) inside sfc/ and a new build target; everything else is
-stock v115. Note: PPU/VRAM/CGRAM dumps read the accuracy renderer — pass
+stock bsnes. Note: PPU/VRAM/CGRAM dumps read the accuracy renderer — pass
 `--accurate` (the fast renderer keeps its own copies, so dumps in fast
 mode are not meaningful).
 
@@ -54,11 +55,11 @@ How this differs from existing debugger emulators
 UI and a Lua-scriptable test runner. [BizHawk](https://github.com/TASEmulators/BizHawk)
 scripts well too (its SNES core is a bsnes port). [bsnes-plus](https://github.com/devinacker/bsnes-plus)
 is a GUI debugger fork of an older bsnes. This target is a different
-shape, not a better one: a small headless bsnes v115 frontend whose
+shape, not a better one: a small headless bsnes frontend whose
 entire interface is NDJSON over stdio and raw binary dumps to files —
 trivially spawnable from scripts, CI, or AI agents, with deterministic
 re-runs. If you want an interactive debugger, use Mesen2. If you want an
-emulator as a subprocess instrument on the v115 core, this exists.
+emulator as a subprocess instrument on the bsnes accuracy core, this exists.
 
 Use cases
 ---------
@@ -88,6 +89,23 @@ verified; remaining known limits: interactive save/load restores
 emulator state but not the host-side frame/input bookkeeping, and the
 oracle makefile's no-OpenMP defaults apply too late to strip the flags.
 Fresh batch runs with fixed input are deterministic.
+
+Branches
+--------
+
+- **`main`** — the oracle rebased onto current upstream bsnes `master`
+  (`78474e5d3`, 2026-10-07).
+- **`v115`** — the oracle on the original bsnes v115 base.
+
+The two are **not result-compatible**. Upstream reworked SNES auto-joypad
+polling after v115 (timing, plus an `HVBJOY` report bit) and bumped the
+save-state serializer version. On the Secret of Evermore boot with an
+`--exec-bp 0x8CA960` run, `v115` hits at frame 3115 (WRAM md5
+`9d5fba13bf8765b6f8b14c299b30d902`) and `main` at frame 3108 (md5
+`e285bff86ffa646b621624402bcff928`). Reverting the auto-joypad commits on
+`main` reproduces the `v115` result exactly. Both are deterministic across
+re-runs; save states do not load across the two. Pick one line per project
+and keep its recorded baselines with it.
 
 Building
 --------
